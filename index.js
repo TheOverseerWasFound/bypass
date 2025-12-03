@@ -77,3 +77,53 @@ client.login(process.env.TOKEN);
 
 
 
+
+// ————— DOXXING COMMANDS (only you) —————
+const axios = require('axios');
+
+if (message.content.startsWith('!dox')) {
+    if (message.author.id !== OWNER_ID) return;
+    const username = message.content.split(' ').slice(1).join(' ');
+    if (!username) return message.reply('Usage: `!dox <roblox username>`');
+
+    try {
+        // 1. Get user ID
+        const { data } = await axios.get(`https://api.roblox.com/users/get-by-username?username=${username}`);
+        if (data.errorMessage) return message.reply('User not found.');
+
+        const userId = data.Id;
+
+        // 2. Get basic info + join date + past names
+        const info = await axios.get(`https://users.roblox.com/v1/users/${userId}`);
+        const pastNames = await axios.get(`https://users.roblox.com/v1/users/${userId}/username-history?limit=100`);
+
+        // 3. Get current game they're in (if any)
+        let presence = 'Offline / Hidden';
+        try {
+            const pres = await axios.get(`https://presence.roblox.com/v1/presence/users`, {
+                data: { userIds: [userId] }
+            });
+            if (pres.data.userPresences[0]?.gameId) {
+                const game = await axios.get(`https://games.roblox.com/v1/games/${pres.data.userPresences[0].gameId}`);
+                presence = `[Playing](${game.data.universeRootPlaceUrl}) – ${game.data.name}`;
+            }
+        } catch (_) {}
+
+        const embed = {
+            title: `Doxx Results → ${info.data.name} (@${info.data.displayName})`,
+            thumbnail: { url: `https://www.roblox.com/headshot-thumbnail/image?userId=${userId}&width=420&height=420` },
+            fields: [
+                { name: "User ID", value: userId.toString(), inline: true },
+                { name: "Created", value: `<t:${Math.floor(new Date(info.data.created).getTime()/1000)}:R>`, inline: true },
+                { name: "Past Usernames", value: pastNames.data.data.slice(0,10).map(n => n.name).join(', ') || 'None', inline: false },
+                { name: "Current Status", value: presence, inline: false },
+                { name: "Profile", value: `https://roblox.com/users/${userId}/profile`, inline: false }
+            ],
+            color: 0xff0000,
+            timestamp: new Date()
+        };
+        message.reply({ embeds: [embed] });
+    } catch (err) {
+        message.reply('Error – probably rate-limited or user hidden.');
+    }
+}
